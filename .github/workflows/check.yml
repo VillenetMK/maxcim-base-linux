@@ -1,0 +1,38 @@
+name: Versión Linux - control y odometría
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - run: arduino-cli core update-index
+      - run: arduino-cli core install arduino:avr@1.8.6
+      - run: arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 firmware/maxcim_base_nano
+      - run: bash scripts/check.sh
+  ros:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [humble, jazzy]
+    container: ros:${{ matrix.distro }}-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencias
+        shell: bash
+        run: |
+          apt-get update
+          apt-get install -y python3-colcon-common-extensions python3-serial g++
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y --rosdistro "$ROS_DISTRO"
+      - name: Construir y probar
+        shell: bash
+        run: |
+          source /opt/ros/$ROS_DISTRO/setup.bash
+          colcon build --symlink-install
+          source install/setup.bash
+          bash scripts/check.sh
+          python3 tests/ros_smoke.py
